@@ -1,0 +1,231 @@
+"""
+SA-U-Lite: Lightweight U-Net Architecture using Spatial Attention
+Combines U-Lite's axial depthwise convolutions with spatial attention mechanism in the bottleneck
+"""
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class SpatialAttention(nn.Module):
+    """PyTorch implementation of Spatial Attention mechanism"""
+    
+    def __init__(self, kernel_size=7):
+        super(SpatialAttention, self).__init__()
+        self.conv = nn.Conv2d(2, 1, kernel_size=kernel_size, padding=kernel_size//2, bias=False)
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x):
+        # Average pooling along channel dimension
+        avg_pool = torch.mean(x, dim=1, keepdim=True)
+        
+        # Max pooling along channel dimension
+        max_pool, _ = torch.max(x, dim=1, keepdim=True)
+        
+        # Concatenate
+        concat = torch.cat([avg_pool, max_pool], dim=1)
+        
+        # Apply convolution and sigmoid
+        attention = self.sigmoid(self.conv(concat))
+        
+        # Apply attention
+        return x * attention
+
+
+class AxialDW(nn.Module):
+    """Axial Depthwise Convolution"""
+    
+    def __init__(self, dim, mixer_kernel, dilation=1):
+        super().__init__()
+        h, w = mixer_kernel
+        self.dw_h = nn.Conv2d(dim, dim, kernel_size=(h, 1), padding='same', groups=dim, dilation=dilation)
+        self.dw_w = nn.Conv2d(dim, dim, kernel_size=(1, w), padding='same', groups=dim, dilation=dilation)
+
+    def forward(self, x):
+        x = x + self.dw_h(x) + self.dw_w(x)
+        return x
+
+
+class EncoderBlock(nn.Module):
+    """Encoding then downsampling"""
+    
+    def __init__(self, in_c, out_c, mixer_kernel=(7, 7)):
+        super().__init__()
+        self.dw = AxialDW(in_c, mixer_kernel=mixer_kernel)
+        self.bn = nn.BatchNorm2d(in_c)
+        self.pw = nn.Conv2d(in_c, out_c, kernel_size=1)
+        self.down = nn.MaxPool2d((2, 2))
+        self.act = nn.GELU()
+
+    def forward(self, x):
+        skip = self.bn(self.dw(x))
+        x = self.act(self.down(self.pw(skip)))
+        return x, skip
+
+
+class DecoderBlock(nn.Module):
+    """Upsampling then decoding"""
+    
+    def __init__(self, in_c, out_c, mixer_kernel=(7, 7)):
+        super().__init__()
+        self.up = nn.Upsample(scale_factor=2)
+        self.pw = nn.Conv2d(in_c + out_c, out_c, kernel_size=1)
+        self.bn = nn.BatchNorm2d(out_c)
+        self.dw = AxialDW(out_c, mixer_kernel=mixer_kernel)
+        self.act = nn.GELU()
+        self.pw2 = nn.Conv2d(out_c, out_c, kernel_size=1)
+
+    def forward(self, x, skip):
+        x = self.up(x)
+        x = torch.cat([x, skip], dim=1)
+        x = self.act(self.pw2(self.dw(self.bn(self.pw(x)))))
+        return x
+
+
+class BottleNeckBlockWithSA(nn.Module):
+    """Axial dilated DW convolution with Spatial Attention"""
+    
+    def __init__(self, dim, attention_kernel_size=7):
+        super().__init__()
+
+        gc = dim // 4
+        self.pw1 = nn.Conv2d(dim, gc, kernel_size=1)
+        self.dw1 = AxialDW(gc, mixer_kernel=(3, 3), dilation=1)
+        self.dw2 = AxialDW(gc, mixer_kernel=(3, 3), dilation=2)
+        self.dw3 = AxialDW(gc, mixer_kernel=(3, 3), dilation=3)
+
+        self.bn = nn.BatchNorm2d(4 * gc)
+        self.pw2 = nn.Conv2d(4 * gc, dim, kernel_size=1)
+        self.act = nn.GELU()
+        
+        # Spatial Attention Module
+        self.spatial_attention = SpatialAttention(kernel_size=attention_kernel_size)
+
+    def forward(self, x):
+        x = self.pw1(x)
+        x = torch.cat([x, self.dw1(x), self.dw2(x), self.dw3(x)], 1)
+        x = self.act(self.pw2(self.bn(x)))
+        
+        # Apply spatial attention
+        x = self.spatial_attention(x)
+        
+        return x
+
+
+class SAULite(nn.Module):
+    """
+    SA-U-Lite: Lightweight U-Net Architecture with Spatial Attention
+    Combines U-Lite's axial depthwise convolutions with spatial attention in the bottleneck
+    """
+    
+    def __init__(self, input_channel=3, num_classes=1, attention_kernel_size=7):
+        super().__init__()
+
+        # Encoder
+        self.conv_in = nn.Conv2d(input_channel, 16, kernel_size=7, padding='same')
+        self.e1 = EncoderBlock(16, 32)
+        self.e2 = EncoderBlock(32, 64)
+        self.e3 = EncoderBlock(64, 128)
+        self.e4 = EncoderBlock(128, 256)
+        self.e5 = EncoderBlock(256, 512)
+
+        # Bottleneck with Spatial Attention
+        self.b5 = BottleNeckBlockWithSA(512, attention_kernel_size=attention_kernel_size)
+
+        # Decoder
+        self.d5 = DecoderBlock(512, 256)
+        self.d4 = DecoderBlock(256, 128)
+        self.d3 = DecoderBlock(128, 64)
+        self.d2 = DecoderBlock(64, 32)
+        self.d1 = DecoderBlock(32, 16)
+        self.conv_out = nn.Conv2d(16, num_classes, kernel_size=1)
+
+    def forward(self, x):
+        # Encoder
+        x = self.conv_in(x)
+        x, skip1 = self.e1(x)
+        x, skip2 = self.e2(x)
+        x, skip3 = self.e3(x)
+        x, skip4 = self.e4(x)
+        x, skip5 = self.e5(x)
+
+        # Bottleneck with Spatial Attention
+        x = self.b5(x)
+
+        # Decoder
+        x = self.d5(x, skip5)
+        x = self.d4(x, skip4)
+        x = self.d3(x, skip3)
+        x = self.d2(x, skip2)
+        x = self.d1(x, skip1)
+        x = self.conv_out(x)
+        return x
+
+
+class ConfigurableSAULite(nn.Module):
+    """
+    Configurable SA-U-Lite for hyperparameter optimization
+    Supports different activation functions, dropout rates, base channels, and attention settings
+    """
+    
+    def __init__(self, input_channel=3, num_classes=1, base_channels=16, 
+                 activation='gelu', dropout_rate=0.0, attention_kernel_size=7):
+        super().__init__()
+        
+        # Activation function
+        if activation == 'gelu':
+            self.act = nn.GELU()
+        elif activation == 'relu':
+            self.act = nn.ReLU(inplace=True)
+        elif activation == 'elu':
+            self.act = nn.ELU(inplace=True)
+        else:
+            self.act = nn.GELU()
+        
+        # Encoder
+        self.conv_in = nn.Conv2d(input_channel, base_channels, kernel_size=7, padding='same')
+        self.e1 = EncoderBlock(base_channels, base_channels * 2)
+        self.e2 = EncoderBlock(base_channels * 2, base_channels * 4)
+        self.e3 = EncoderBlock(base_channels * 4, base_channels * 8)
+        self.e4 = EncoderBlock(base_channels * 8, base_channels * 16)
+        self.e5 = EncoderBlock(base_channels * 16, base_channels * 32)
+
+        # Bottleneck with Spatial Attention
+        self.b5 = BottleNeckBlockWithSA(base_channels * 32, attention_kernel_size=attention_kernel_size)
+
+        # Decoder
+        self.d5 = DecoderBlock(base_channels * 32, base_channels * 16)
+        self.d4 = DecoderBlock(base_channels * 16, base_channels * 8)
+        self.d3 = DecoderBlock(base_channels * 8, base_channels * 4)
+        self.d2 = DecoderBlock(base_channels * 4, base_channels * 2)
+        self.d1 = DecoderBlock(base_channels * 2, base_channels)
+        
+        # Dropout
+        self.dropout = nn.Dropout2d(dropout_rate) if dropout_rate > 0 else nn.Identity()
+        
+        self.conv_out = nn.Conv2d(base_channels, num_classes, kernel_size=1)
+
+    def forward(self, x):
+        # Encoder
+        x = self.conv_in(x)
+        x, skip1 = self.e1(x)
+        x, skip2 = self.e2(x)
+        x, skip3 = self.e3(x)
+        x, skip4 = self.e4(x)
+        x, skip5 = self.e5(x)
+
+        # Bottleneck with Spatial Attention
+        x = self.b5(x)
+
+        # Decoder
+        x = self.d5(x, skip5)
+        x = self.d4(x, skip4)
+        x = self.d3(x, skip3)
+        x = self.d2(x, skip2)
+        x = self.d1(x, skip1)
+        
+        # Dropout and output
+        x = self.dropout(x)
+        x = self.conv_out(x)
+        return x
