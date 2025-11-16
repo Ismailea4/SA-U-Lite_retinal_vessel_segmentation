@@ -1,6 +1,6 @@
 """
 Classical W-Net with 18 Layers
-Standard W-Net architecture for image segmentation
+W-Net architecture for image segmentation (two U-Nets connected)
 """
 
 import torch
@@ -30,8 +30,8 @@ class Conv2dBlock(nn.Module):
             self.activation = nn.ELU(inplace=True)
         elif activation == 'leaky_relu':
             self.activation = nn.LeakyReLU(0.2, inplace=True)
-        elif activation == 'tanh':
-            self.activation = nn.Tanh()
+        elif activation == 'gelu':
+            self.activation = nn.GELU()
         else:
             self.activation = nn.ReLU(inplace=True)
         
@@ -53,140 +53,139 @@ class Conv2dBlock(nn.Module):
 
 class WNet18(nn.Module):
     """
-    Classical W-Net with 18 layers for retinal blood vessel segmentation
-    
-    Architecture:
-    - 5 encoder levels (2 conv layers each) = 10 layers
-    - 1 bottleneck (2 conv layers) = 2 layers  
-    - 4 decoder levels (2 conv layers each) = 8 layers
-    - 1 output layer = 1 layer
-    Total: 18 layers (plus skip connections)
+    W-Net: Two U-Nets connected in series
+    Forms a 'W' shape architecture for improved segmentation
     """
     
     def __init__(self, 
                  input_channels=3, 
                  num_classes=1, 
-                 start_filters=64,
+                 start_filters=32,  # Reduced to keep model size reasonable
                  activation='relu',
                  use_batchnorm=True,
                  dropout_rate=0.0):
         super(WNet18, self).__init__()
         
-        # Calculate filter sizes for each level
-        filters = [start_filters * (2**i) for i in range(6)]  # [64, 128, 256, 512, 1024, 2048]
+        # Filter sizes
+        f = [start_filters * (2**i) for i in range(6)]
         
-        # Encoder Path (Contracting Path)
-        self.encoder1 = Conv2dBlock(input_channels, filters[0], activation, use_batchnorm, dropout_rate)
-        self.pool1 = nn.MaxPool2d(2)
+        # ============= FIRST U-NET (Left V of W) =============
+        # Encoder 1
+        self.enc1_1 = Conv2dBlock(input_channels, f[0], activation, use_batchnorm, dropout_rate)
+        self.pool1_1 = nn.MaxPool2d(2)
         
-        self.encoder2 = Conv2dBlock(filters[0], filters[1], activation, use_batchnorm, dropout_rate)
-        self.pool2 = nn.MaxPool2d(2)
+        self.enc1_2 = Conv2dBlock(f[0], f[1], activation, use_batchnorm, dropout_rate)
+        self.pool1_2 = nn.MaxPool2d(2)
         
-        self.encoder3 = Conv2dBlock(filters[1], filters[2], activation, use_batchnorm, dropout_rate)
-        self.pool3 = nn.MaxPool2d(2)
+        self.enc1_3 = Conv2dBlock(f[1], f[2], activation, use_batchnorm, dropout_rate)
+        self.pool1_3 = nn.MaxPool2d(2)
         
-        self.encoder4 = Conv2dBlock(filters[2], filters[3], activation, use_batchnorm, dropout_rate)
-        self.pool4 = nn.MaxPool2d(2)
+        self.enc1_4 = Conv2dBlock(f[2], f[3], activation, use_batchnorm, dropout_rate)
+        self.pool1_4 = nn.MaxPool2d(2)
         
-        self.encoder5 = Conv2dBlock(filters[3], filters[4], activation, use_batchnorm, dropout_rate)
-        self.pool5 = nn.MaxPool2d(2)
+        # Bottleneck 1
+        self.bottleneck1 = Conv2dBlock(f[3], f[4], activation, use_batchnorm, dropout_rate)
         
-        # Bottleneck (Bridge)
-        self.bottleneck = Conv2dBlock(filters[4], filters[5], activation, use_batchnorm, dropout_rate)
-
-        # Bottleneck (upper)
-        self.bottleneck_upper = Conv2dBlock(filters[3], filters[2], activation, use_batchnorm, dropout_rate)
+        # Decoder 1 (partial - only up to middle)
+        self.up1_4 = nn.ConvTranspose2d(f[4], f[3], kernel_size=2, stride=2)
+        self.dec1_4 = Conv2dBlock(f[4], f[3], activation, use_batchnorm, dropout_rate)
         
-        # Decoder Path (Expanding Path)
-        self.upconv5 = nn.ConvTranspose2d(filters[5], filters[4], kernel_size=2, stride=2)
-        self.decoder5 = Conv2dBlock(filters[5], filters[4], activation, use_batchnorm, dropout_rate)
+        self.up1_3 = nn.ConvTranspose2d(f[3], f[2], kernel_size=2, stride=2)
+        self.dec1_3 = Conv2dBlock(f[3], f[2], activation, use_batchnorm, dropout_rate)
         
-        self.upconv4 = nn.ConvTranspose2d(filters[4], filters[3], kernel_size=2, stride=2)
-        self.decoder4 = Conv2dBlock(filters[4], filters[3], activation, use_batchnorm, dropout_rate)
+        # ============= MIDDLE BOTTLENECK (Center of W) =============
+        self.middle_bottleneck = Conv2dBlock(f[2], f[2], activation, use_batchnorm, dropout_rate)
         
-        self.upconv3 = nn.ConvTranspose2d(filters[3], filters[2], kernel_size=2, stride=2)
-        self.decoder3 = Conv2dBlock(filters[3], filters[2], activation, use_batchnorm, dropout_rate)
+        # ============= SECOND U-NET (Right V of W) =============
+        # Encoder 2
+        self.enc2_3 = Conv2dBlock(f[2], f[2], activation, use_batchnorm, dropout_rate)
+        self.pool2_3 = nn.MaxPool2d(2)
         
-        self.upconv2 = nn.ConvTranspose2d(filters[2], filters[1], kernel_size=2, stride=2)
-        self.decoder2 = Conv2dBlock(filters[2], filters[1], activation, use_batchnorm, dropout_rate)
+        self.enc2_4 = Conv2dBlock(f[2], f[3], activation, use_batchnorm, dropout_rate)
+        self.pool2_4 = nn.MaxPool2d(2)
         
-        self.upconv1 = nn.ConvTranspose2d(filters[1], filters[0], kernel_size=2, stride=2)
-        self.decoder1 = Conv2dBlock(filters[1], filters[0], activation, use_batchnorm, dropout_rate)
+        # Bottleneck 2
+        self.bottleneck2 = Conv2dBlock(f[3], f[4], activation, use_batchnorm, dropout_rate)
         
-        # Output layer
-        self.output_conv = nn.Conv2d(filters[0], num_classes, kernel_size=1)
+        # Decoder 2 (full)
+        self.up2_4 = nn.ConvTranspose2d(f[4], f[3], kernel_size=2, stride=2)
+        self.dec2_4 = Conv2dBlock(f[4], f[3], activation, use_batchnorm, dropout_rate)
+        
+        self.up2_3 = nn.ConvTranspose2d(f[3], f[2], kernel_size=2, stride=2)
+        self.dec2_3 = Conv2dBlock(f[3], f[2], activation, use_batchnorm, dropout_rate)
+        
+        self.up2_2 = nn.ConvTranspose2d(f[2], f[1], kernel_size=2, stride=2)
+        self.dec2_2 = Conv2dBlock(f[2], f[1], activation, use_batchnorm, dropout_rate)
+        
+        self.up2_1 = nn.ConvTranspose2d(f[1], f[0], kernel_size=2, stride=2)
+        self.dec2_1 = Conv2dBlock(f[1], f[0], activation, use_batchnorm, dropout_rate)
+        
+        # Output
+        self.output_conv = nn.Conv2d(f[0], num_classes, kernel_size=1)
     
     def forward(self, x):
-        #First V part of the W-net
-
-        # Encoder path with skip connections
-        enc1 = self.encoder1(x)
-        x = self.pool1(enc1)
+        # ============= FIRST U-NET (Encoder-Decoder 1) =============
+        # Encoder path
+        e1_1 = self.enc1_1(x)
+        x = self.pool1_1(e1_1)
         
-        enc2 = self.encoder2(x)
-        x = self.pool2(enc2)
+        e1_2 = self.enc1_2(x)
+        x = self.pool1_2(e1_2)
         
-        enc3 = self.encoder3(x)
-        x = self.pool3(enc3)
+        e1_3 = self.enc1_3(x)
+        x = self.pool1_3(e1_3)
         
-        enc4 = self.encoder4(x)
-        x = self.pool4(enc4)
+        e1_4 = self.enc1_4(x)
+        x = self.pool1_4(e1_4)
         
-        enc5 = self.encoder5(x)
-        x = self.pool5(enc5)
+        # Bottleneck 1
+        x = self.bottleneck1(x)
         
-        # Bottleneck 1 (bridge)
-        x = self.bottleneck(x)
-
-        # Decoder path with skip connections between the bottleneck 1 and 2
-        x = self.upconv5(x)
-        x = torch.cat([x, enc5], dim=1)  # Skip connection
-        x = self.decoder5(x)
+        # Partial decoder (go back up to middle level)
+        x = self.up1_4(x)
+        x = torch.cat([x, e1_4], dim=1)
+        x = self.dec1_4(x)
         
-        x = self.upconv4(x)
-        x = torch.cat([x, enc4], dim=1)  # Skip connection
-        x = self.decoder4(x)
+        x = self.up1_3(x)
+        x = torch.cat([x, e1_3], dim=1)
+        x = self.dec1_3(x)
         
-        #Bottleneck 2 (upper)
-        x = self.bottleneck_upper(x)
-
-        #Second V part of the W-net
+        # ============= MIDDLE BOTTLENECK =============
+        x = self.middle_bottleneck(x)
         
-        # Encoder path with skip connections between the bottleneck 2 and 3
-        enc4 = self.encoder4(x)
-        x = self.pool4(enc4)
+        # ============= SECOND U-NET (Encoder-Decoder 2) =============
+        # Encoder path (go back down)
+        e2_3 = self.enc2_3(x)
+        x = self.pool2_3(e2_3)
         
-        enc5 = self.encoder5(x)
-        x = self.pool5(enc5)
-
-        # Bottleneck 3(bridge)
-        x = self.bottleneck(x)
-
-        # Decoder path with skip connections
-        x = self.upconv5(x)
-        x = torch.cat([x, enc5], dim=1)  # Skip connection
-        x = self.decoder5(x)
+        e2_4 = self.enc2_4(x)
+        x = self.pool2_4(e2_4)
         
-        x = self.upconv4(x)
-        x = torch.cat([x, enc4], dim=1)  # Skip connection
-        x = self.decoder4(x)
+        # Bottleneck 2
+        x = self.bottleneck2(x)
         
-        x = self.upconv3(x)
-        x = torch.cat([x, enc3], dim=1)  # Skip connection
-        x = self.decoder3(x)
+        # Full decoder path
+        x = self.up2_4(x)
+        x = torch.cat([x, e2_4], dim=1)
+        x = self.dec2_4(x)
         
-        x = self.upconv2(x)
-        x = torch.cat([x, enc2], dim=1)  # Skip connection
-        x = self.decoder2(x)
+        x = self.up2_3(x)
+        x = torch.cat([x, e2_3], dim=1)
+        x = self.dec2_3(x)
         
-        x = self.upconv1(x)
-        x = torch.cat([x, enc1], dim=1)  # Skip connection
-        x = self.decoder1(x)
+        x = self.up2_2(x)
+        x = torch.cat([x, e1_2], dim=1)  # Skip from first U-Net
+        x = self.dec2_2(x)
+        
+        x = self.up2_1(x)
+        x = torch.cat([x, e1_1], dim=1)  # Skip from first U-Net
+        x = self.dec2_1(x)
         
         # Output
         x = self.output_conv(x)
         
         return x
+
 
 # Configurable version
 ConfigurableWNet18 = WNet18
