@@ -1,6 +1,16 @@
 """
 Visualization script for model training results
 Plots training history (loss and dice) for all models in a dataset/epoch combination
+
+Usage:
+    Interactive mode:
+        python plot_result.py
+    
+    Command-line mode:
+        python plot_result.py --dataset CHASE --epochs 10_epochs
+        python plot_result.py -d DRIVE -e 50_epochs --no-save
+        python plot_result.py --list-datasets
+        python plot_result.py --list-epochs CHASE
 """
 
 import os
@@ -8,6 +18,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import json
 import numpy as np
+import argparse
 from pathlib import Path
 
 
@@ -324,16 +335,185 @@ class ResultsPlotter:
             traceback.print_exc()
 
 
+def parse_arguments():
+    """Parse command line arguments"""
+    
+    parser = argparse.ArgumentParser(
+        description='Visualize training results for U-Net model benchmarking',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Interactive mode (default)
+  python plot_result.py
+  
+  # Plot specific dataset and epoch
+  python plot_result.py --dataset CHASE --epochs 10_epochs
+  python plot_result.py -d DRIVE -e 50_epochs
+  
+  # Plot without saving figures
+  python plot_result.py -d CHASE -e 10_epochs --no-save
+  
+  # List available datasets
+  python plot_result.py --list-datasets
+  
+  # List available epoch folders for a dataset
+  python plot_result.py --list-epochs CHASE
+        """
+    )
+    
+    parser.add_argument('-d', '--dataset',
+                       type=str,
+                       help='Dataset name (CHASE, DRIVE, STARE, HRF)')
+    
+    parser.add_argument('-e', '--epochs',
+                       type=str,
+                       help='Epoch folder name (e.g., 10_epochs, 25_epochs)')
+    
+    parser.add_argument('--no-save',
+                       action='store_true',
+                       help='Do not save figures to disk (only display)')
+    
+    parser.add_argument('--list-datasets',
+                       action='store_true',
+                       help='List all available datasets and exit')
+    
+    parser.add_argument('--list-epochs',
+                       type=str,
+                       metavar='DATASET',
+                       help='List available epoch folders for a dataset and exit')
+    
+    parser.add_argument('--results-dir',
+                       type=str,
+                       default='results',
+                       help='Path to results directory (default: results)')
+    
+    return parser.parse_args()
+
+
+def list_datasets(plotter):
+    """List all available datasets"""
+    
+    print("\n" + "="*80)
+    print("AVAILABLE DATASETS")
+    print("="*80 + "\n")
+    
+    if not plotter.available_datasets:
+        print("✗ No datasets found in results directory!")
+        print(f"  Location: {plotter.results_dir}")
+        return
+    
+    for dataset in plotter.available_datasets:
+        epochs = plotter.available_epochs[dataset]
+        print(f"  • {dataset:<15} ({len(epochs)} epoch folder(s))")
+        if epochs:
+            for epoch in epochs:
+                print(f"    - {epoch}")
+    
+    print("\n" + "="*80)
+
+
+def list_epochs_for_dataset(plotter, dataset):
+    """List available epoch folders for a specific dataset"""
+    
+    if dataset not in plotter.available_datasets:
+        print(f"\n✗ Dataset '{dataset}' not found!")
+        print(f"  Available datasets: {', '.join(plotter.available_datasets)}")
+        return
+    
+    epochs = plotter.available_epochs[dataset]
+    
+    print("\n" + "="*80)
+    print(f"AVAILABLE EPOCH FOLDERS FOR {dataset}")
+    print("="*80 + "\n")
+    
+    if not epochs:
+        print(f"✗ No epoch folders found for {dataset}!")
+        return
+    
+    for epoch in epochs:
+        train_hist_dir = plotter.results_dir / dataset / epoch / 'train_hist'
+        if train_hist_dir.exists():
+            num_models = len(list(train_hist_dir.glob('*_train_hist.csv')))
+            print(f"  • {epoch:<20} ({num_models} model(s))")
+        else:
+            print(f"  • {epoch:<20} (no training history)")
+    
+    print("\n" + "="*80)
+
+
+def display_configuration(dataset, epoch_folder, save_fig):
+    """Display the configuration before plotting"""
+    
+    print("\n" + "="*80)
+    print("PLOT CONFIGURATION")
+    print("="*80)
+    print(f"  Dataset:      {dataset}")
+    print(f"  Epoch Folder: {epoch_folder}")
+    print(f"  Save Figures: {'Yes' if save_fig else 'No'}")
+    print("="*80)
+
+
 def main():
     """Main entry point"""
     
-    # Change to results directory if running from within it
+    args = parse_arguments()
+    
+    # Change to script directory if needed
     script_dir = Path(__file__).parent
     if script_dir.name == 'results':
         os.chdir(script_dir)
     
-    plotter = ResultsPlotter()
-    plotter.interactive_plot()
+    # Initialize plotter
+    plotter = ResultsPlotter(args.results_dir)
+    
+    # Handle list operations
+    if args.list_datasets:
+        list_datasets(plotter)
+        return
+    
+    if args.list_epochs:
+        list_epochs_for_dataset(plotter, args.list_epochs)
+        return
+    
+    # Command-line mode
+    if args.dataset and args.epochs:
+        
+        # Validate dataset
+        if args.dataset not in plotter.available_datasets:
+            print(f"\n✗ Error: Dataset '{args.dataset}' not found!")
+            print(f"  Available datasets: {', '.join(plotter.available_datasets)}")
+            print("\n  Use --list-datasets to see all available datasets")
+            return
+        
+        # Validate epoch folder
+        if args.epochs not in plotter.available_epochs[args.dataset]:
+            print(f"\n✗ Error: Epoch folder '{args.epochs}' not found for {args.dataset}!")
+            print(f"  Available epoch folders: {', '.join(plotter.available_epochs[args.dataset])}")
+            print(f"\n  Use --list-epochs {args.dataset} to see all available epoch folders")
+            return
+        
+        # Display configuration
+        display_configuration(args.dataset, args.epochs, not args.no_save)
+        
+        # Plot results
+        try:
+            plotter.plot_training_history(args.dataset, args.epochs, save_fig=not args.no_save)
+            plotter.plot_performance_comparison(args.dataset, args.epochs, save_fig=not args.no_save)
+            print("\n✓ Plotting completed successfully!")
+        except Exception as e:
+            print(f"\n✗ Error plotting results: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # Interactive mode
+    elif not args.dataset and not args.epochs:
+        plotter.interactive_plot()
+    
+    # Incomplete arguments
+    else:
+        print("\n✗ Error: Both --dataset and --epochs are required for command-line mode!")
+        print("  Use --help for usage information")
+        print("  Or run without arguments for interactive mode")
 
 
 if __name__ == '__main__':
