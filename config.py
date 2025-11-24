@@ -56,9 +56,7 @@ from models.sdulite import ConfigurableULiteDropBlock
 from models.sda_ulite import ConfigurableSDAULite
 from models.w_net import ConfigurableWNet18
 from models.w_lite import ConfigurableWLite
-from models.w_lite2 import ConfigurableWLite2
 from models.sda_wlite import ConfigurableSDAWLite
-from models.enhance_saunet import DetailFocusedSAUNet
 
 MODEL_REGISTRY = {
     'UNet18': {
@@ -126,16 +124,6 @@ MODEL_REGISTRY = {
             'dropout_rate': 0.1
         }
     },
-    'W-Lite2': {
-        'class': ConfigurableWLite2,
-        'params': {
-            'input_channel': 3,
-            'num_classes': 1,
-            'base_channels': 16,
-            'activation': 'gelu',
-            'dropout_rate': 0.1
-        }
-    },
     'SDA-W-Lite': {
         'class': ConfigurableSDAWLite,
         'params': {
@@ -149,14 +137,7 @@ MODEL_REGISTRY = {
             'dropout_rate': 0.1
         }
     },
-    'Detail-SA-UNet': {
-        'class': DetailFocusedSAUNet,
-        'params': {
-            'input_channels': 3,
-            'num_classes': 1,
-            'start_neurons': 16
-        }
-    }
+
 }
 
 # ==================== TRAINING CONFIGURATIONS ====================
