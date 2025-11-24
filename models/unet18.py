@@ -66,14 +66,14 @@ class ClassicalUNet18(nn.Module):
     def __init__(self, 
                  input_channels=3, 
                  num_classes=1, 
-                 start_filters=64,
+                 base_channels=64,
                  activation='relu',
                  use_batchnorm=True,
                  dropout_rate=0.0):
         super(ClassicalUNet18, self).__init__()
         
         # Calculate filter sizes for each level
-        filters = [start_filters * (2**i) for i in range(5)]  # [64, 128, 256, 512, 1024]
+        filters = [base_channels * (2**i) for i in range(5)]  # [64, 128, 256, 512, 1024]
         
         # Encoder Path (Contracting Path)
         self.encoder1 = Conv2dBlock(input_channels, filters[0], activation, use_batchnorm, dropout_rate)

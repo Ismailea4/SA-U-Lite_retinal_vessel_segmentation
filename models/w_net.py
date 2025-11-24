@@ -60,14 +60,14 @@ class WNet18(nn.Module):
     def __init__(self, 
                  input_channels=3, 
                  num_classes=1, 
-                 start_filters=32,  # Reduced to keep model size reasonable
+                 base_channels=32,  # Reduced to keep model size reasonable
                  activation='relu',
                  use_batchnorm=True,
                  dropout_rate=0.0):
         super(WNet18, self).__init__()
         
         # Filter sizes
-        f = [start_filters * (2**i) for i in range(6)]
+        f = [base_channels * (2**i) for i in range(6)]
         
         # ============= FIRST U-NET (Left V of W) =============
         # Encoder 1
