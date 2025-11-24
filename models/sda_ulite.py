@@ -243,25 +243,15 @@ class ConfigurableSDAULite(nn.Module):
             block_size=block_size, keep_prob=keep_prob,
             attention_kernel_size=attention_kernel_size, activation=activation
         )
-        self.e5 = EncoderBlockWithSDAtten(
-            base_channels * 16, base_channels * 32,
-            block_size=block_size, keep_prob=keep_prob,
-            attention_kernel_size=attention_kernel_size, activation=activation
-        )
 
         # Bottleneck with both DropBlock and Spatial Attention
         self.b5 = BottleNeckBlockWithSDAtten(
-            base_channels * 32,
+            base_channels * 16,
             block_size=block_size, keep_prob=keep_prob,
             attention_kernel_size=attention_kernel_size, activation=activation
         )
 
         # Decoder
-        self.d5 = DecoderBlockWithSDAtten(
-            base_channels * 32, base_channels * 16,
-            block_size=block_size, keep_prob=keep_prob,
-            attention_kernel_size=attention_kernel_size, activation=activation
-        )
         self.d4 = DecoderBlockWithSDAtten(
             base_channels * 16, base_channels * 8,
             block_size=block_size, keep_prob=keep_prob,
@@ -295,13 +285,11 @@ class ConfigurableSDAULite(nn.Module):
         x, skip2 = self.e2(x)
         x, skip3 = self.e3(x)
         x, skip4 = self.e4(x)
-        x, skip5 = self.e5(x)
 
         # Bottleneck
         x = self.b5(x)
 
         # Decoder
-        x = self.d5(x, skip5)
         x = self.d4(x, skip4)
         x = self.d3(x, skip3)
         x = self.d2(x, skip2)

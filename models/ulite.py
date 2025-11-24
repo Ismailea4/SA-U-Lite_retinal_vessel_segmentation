@@ -96,13 +96,11 @@ class ULite(nn.Module):
         self.e2 = EncoderBlock(32, 64)
         self.e3 = EncoderBlock(64, 128)
         self.e4 = EncoderBlock(128, 256)
-        self.e5 = EncoderBlock(256, 512)
 
         # Bottleneck
-        self.b5 = BottleNeckBlock(512)
+        self.b5 = BottleNeckBlock(256)
 
         # Decoder
-        self.d5 = DecoderBlock(512, 256)
         self.d4 = DecoderBlock(256, 128)
         self.d3 = DecoderBlock(128, 64)
         self.d2 = DecoderBlock(64, 32)
@@ -116,13 +114,11 @@ class ULite(nn.Module):
         x, skip2 = self.e2(x)
         x, skip3 = self.e3(x)
         x, skip4 = self.e4(x)
-        x, skip5 = self.e5(x)
 
         # Bottleneck
         x = self.b5(x)
 
         # Decoder
-        x = self.d5(x, skip5)
         x = self.d4(x, skip4)
         x = self.d3(x, skip3)
         x = self.d2(x, skip2)
@@ -157,13 +153,11 @@ class ConfigurableULite(nn.Module):
         self.e2 = EncoderBlock(base_channels * 2, base_channels * 4)
         self.e3 = EncoderBlock(base_channels * 4, base_channels * 8)
         self.e4 = EncoderBlock(base_channels * 8, base_channels * 16)
-        self.e5 = EncoderBlock(base_channels * 16, base_channels * 32)
 
         # Bottleneck
-        self.b5 = BottleNeckBlock(base_channels * 32)
+        self.b5 = BottleNeckBlock(base_channels * 16)
 
         # Decoder
-        self.d5 = DecoderBlock(base_channels * 32, base_channels * 16)
         self.d4 = DecoderBlock(base_channels * 16, base_channels * 8)
         self.d3 = DecoderBlock(base_channels * 8, base_channels * 4)
         self.d2 = DecoderBlock(base_channels * 4, base_channels * 2)
@@ -181,13 +175,11 @@ class ConfigurableULite(nn.Module):
         x, skip2 = self.e2(x)
         x, skip3 = self.e3(x)
         x, skip4 = self.e4(x)
-        x, skip5 = self.e5(x)
 
         # Bottleneck
         x = self.b5(x)
 
         # Decoder
-        x = self.d5(x, skip5)
         x = self.d4(x, skip4)
         x = self.d3(x, skip3)
         x = self.d2(x, skip2)

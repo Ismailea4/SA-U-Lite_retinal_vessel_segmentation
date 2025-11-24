@@ -73,7 +73,7 @@ class ClassicalUNet18(nn.Module):
         super(ClassicalUNet18, self).__init__()
         
         # Calculate filter sizes for each level
-        filters = [start_filters * (2**i) for i in range(6)]  # [64, 128, 256, 512, 1024, 2048]
+        filters = [start_filters * (2**i) for i in range(5)]  # [64, 128, 256, 512, 1024]
         
         # Encoder Path (Contracting Path)
         self.encoder1 = Conv2dBlock(input_channels, filters[0], activation, use_batchnorm, dropout_rate)
@@ -88,15 +88,10 @@ class ClassicalUNet18(nn.Module):
         self.encoder4 = Conv2dBlock(filters[2], filters[3], activation, use_batchnorm, dropout_rate)
         self.pool4 = nn.MaxPool2d(2)
         
-        self.encoder5 = Conv2dBlock(filters[3], filters[4], activation, use_batchnorm, dropout_rate)
-        self.pool5 = nn.MaxPool2d(2)
-        
         # Bottleneck (Bridge)
-        self.bottleneck = Conv2dBlock(filters[4], filters[5], activation, use_batchnorm, dropout_rate)
+        self.bottleneck = Conv2dBlock(filters[3], filters[4], activation, use_batchnorm, dropout_rate)
         
         # Decoder Path (Expanding Path)
-        self.upconv5 = nn.ConvTranspose2d(filters[5], filters[4], kernel_size=2, stride=2)
-        self.decoder5 = Conv2dBlock(filters[5], filters[4], activation, use_batchnorm, dropout_rate)
         
         self.upconv4 = nn.ConvTranspose2d(filters[4], filters[3], kernel_size=2, stride=2)
         self.decoder4 = Conv2dBlock(filters[4], filters[3], activation, use_batchnorm, dropout_rate)
@@ -127,16 +122,10 @@ class ClassicalUNet18(nn.Module):
         enc4 = self.encoder4(x)
         x = self.pool4(enc4)
         
-        enc5 = self.encoder5(x)
-        x = self.pool5(enc5)
-        
         # Bottleneck
         x = self.bottleneck(x)
         
         # Decoder path with skip connections
-        x = self.upconv5(x)
-        x = torch.cat([x, enc5], dim=1)  # Skip connection
-        x = self.decoder5(x)
         
         x = self.upconv4(x)
         x = torch.cat([x, enc4], dim=1)  # Skip connection
@@ -158,3 +147,5 @@ class ClassicalUNet18(nn.Module):
         x = self.output_conv(x)
         
         return x
+
+ConfigurableUNet18 = ClassicalUNet18
