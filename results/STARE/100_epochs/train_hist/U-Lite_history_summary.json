@@ -1,0 +1,9 @@
+{
+  "model_name": "U-Lite",
+  "total_epochs": 100,
+  "best_val_dice": 0.7970438301563263,
+  "final_train_loss": 0.12997759729623795,
+  "final_val_loss": 0.19458375871181488,
+  "final_train_dice": 0.869524872303009,
+  "final_val_dice": 0.796194314956665
+}

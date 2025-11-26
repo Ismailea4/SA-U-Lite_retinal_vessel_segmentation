@@ -1,0 +1,9 @@
+{
+  "model_name": "SDA-W-Lite",
+  "total_epochs": 100,
+  "best_val_dice": 0.7957757264375687,
+  "final_train_loss": 0.19200347363948822,
+  "final_val_loss": 0.18582844361662865,
+  "final_train_dice": 0.7978618621826172,
+  "final_val_dice": 0.7957757264375687
+}

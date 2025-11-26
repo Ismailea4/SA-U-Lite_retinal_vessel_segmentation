@@ -129,19 +129,19 @@ class ResultsPlotter:
             
             # Training Loss
             axes[0, 0].plot(df['epoch'], df['loss_train'], 
-                           label=model_name, color=color, linewidth=2, marker='o', markersize=4)
+                           label=model_name, color=color, linewidth=1)
             
             # Validation Loss
             axes[0, 1].plot(df['epoch'], df['loss_val'], 
-                           label=model_name, color=color, linewidth=2, marker='s', markersize=4)
+                           label=model_name, color=color, linewidth=1)
             
             # Training Dice
             axes[1, 0].plot(df['epoch'], df['dice_train'], 
-                           label=model_name, color=color, linewidth=2, marker='^', markersize=4)
+                           label=model_name, color=color, linewidth=1)
             
             # Validation Dice
             axes[1, 1].plot(df['epoch'], df['dice_val'], 
-                           label=model_name, color=color, linewidth=2, marker='D', markersize=4)
+                           label=model_name, color=color, linewidth=1)
         
         # Configure subplots
         axes[0, 0].set_title('Training Loss', fontsize=12, fontweight='bold')

@@ -1,0 +1,9 @@
+{
+  "model_name": "UNet18",
+  "total_epochs": 100,
+  "best_val_dice": 0.7971038669347763,
+  "final_train_loss": 0.19397265513737996,
+  "final_val_loss": 0.18608301877975464,
+  "final_train_dice": 0.7952816367149353,
+  "final_val_dice": 0.796034500002861
+}

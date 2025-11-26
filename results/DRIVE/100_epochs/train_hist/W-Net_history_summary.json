@@ -1,0 +1,9 @@
+{
+  "model_name": "W-Net",
+  "total_epochs": 100,
+  "best_val_dice": 0.7968125343322754,
+  "final_train_loss": 0.18017629975989713,
+  "final_val_loss": 0.16865661527429307,
+  "final_train_dice": 0.784499699786558,
+  "final_val_dice": 0.7958451424326215
+}
