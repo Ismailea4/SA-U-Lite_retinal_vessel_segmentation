@@ -1,0 +1,9 @@
+{
+  "model_name": "W-Lite",
+  "total_epochs": 100,
+  "best_val_dice": 0.8041491309801737,
+  "final_train_loss": 0.11677365140481429,
+  "final_val_loss": 0.16999405291345385,
+  "final_train_dice": 0.8796074625217554,
+  "final_val_dice": 0.8036449948946635
+}

@@ -1,0 +1,9 @@
+{
+  "model_name": "SDA-U-Lite",
+  "total_epochs": 100,
+  "best_val_dice": 0.7564032673835754,
+  "final_train_loss": 0.2041205610289718,
+  "final_val_loss": 0.19675343566470677,
+  "final_train_dice": 0.7510094335584929,
+  "final_val_dice": 0.756373663743337
+}
