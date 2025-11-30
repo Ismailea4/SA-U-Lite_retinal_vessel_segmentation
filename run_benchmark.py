@@ -5,6 +5,8 @@ Usage: python run_benchmark.py --dataset CHASE --models SA-U-Lite,W-Lite --epoch
 
 import argparse
 import sys
+from pathlib import Path
+import pandas as pd
 from benchmark import BenchmarkRunner
 from config import DATASETS, MODEL_REGISTRY, AVAILABLE_EPOCHS
 
@@ -99,6 +101,20 @@ Examples:
         help='Enable verbose output'
     )
     
+    # Optimal hyperparameters mode
+    parser.add_argument(
+        '--optimal',
+        action='store_true',
+        help='Use optimal hyperparameters from HPO results (results/hpo_results/abc_hpo_results.csv)'
+    )
+    
+    parser.add_argument(
+        '--hpo-results',
+        type=str,
+        default='results/hpo_results/abc_hpo_results.csv',
+        help='Path to HPO results CSV (default: results/hpo_results/abc_hpo_results.csv)'
+    )
+    
     return parser.parse_args()
 
 
@@ -134,6 +150,84 @@ def list_models():
     print("\n" + "="*80)
     print(f"Total: {len(MODEL_REGISTRY)} models")
     print("="*80)
+
+
+def load_optimal_params(hpo_csv_path, dataset_name, model_names):
+    """Load and apply optimal hyperparameters from HPO results."""
+    if not Path(hpo_csv_path).exists():
+        print(f"\n⚠ Warning: HPO results file not found: {hpo_csv_path}")
+        print("  Proceeding with default parameters from config.py")
+        return False
+    
+    try:
+        hpo_df = pd.read_csv(hpo_csv_path)
+        print(f"\n✓ Loaded HPO results from {hpo_csv_path}")
+        
+        # Filter for current dataset and models
+        filtered = hpo_df[(hpo_df['dataset'] == dataset_name) & (hpo_df['model'].isin(model_names))]
+        
+        if len(filtered) == 0:
+            print(f"⚠ No optimal parameters found for {dataset_name} with models {model_names}")
+            print("  Proceeding with default parameters from config.py")
+            return False
+        
+        print(f"\n📊 Applying optimal hyperparameters:\n")
+        
+        # Apply parameters for each model
+        for _, row in filtered.iterrows():
+            model_name = row['model']
+            if model_name not in MODEL_REGISTRY:
+                continue
+            
+            model_entry = MODEL_REGISTRY[model_name]
+            
+            print(f"  {model_name}:")
+            print(f"    HPO Score: {row['best_score']:.4f}")
+            
+            # Map and update parameters
+            param_mapping = {
+                'base_channels': 'base_channels',
+                'attention_kernel_size': 'attention_kernel_size',
+                'block_size': 'block_size',
+                'keep_prob': 'keep_prob',
+                'dropout_rate': 'dropout_rate',
+                'activation': 'activation',
+            }
+            
+            for hpo_key, model_key in param_mapping.items():
+                if hpo_key in row and model_key in model_entry['params']:
+                    old_val = model_entry['params'][model_key]
+                    new_val = row[hpo_key]
+                    model_entry['params'][model_key] = new_val
+                    print(f"    {model_key}: {old_val} → {new_val}")
+        
+        print()
+        return True
+        
+    except Exception as e:
+        print(f"\n⚠ Error loading HPO results: {e}")
+        print("  Proceeding with default parameters from config.py")
+        return False
+
+# NEW: create alias entries with '_opti' suffix so saved results carry the suffix
+def alias_models_with_suffix(model_names, suffix='_opti'):
+    """Create MODEL_REGISTRY aliases with a suffix and return the suffixed names."""
+    aliased_names = []
+    for name in model_names:
+        if name not in MODEL_REGISTRY:
+            continue
+        alias = f"{name}{suffix}"
+        # If alias already exists, overwrite params to keep it in sync
+        MODEL_REGISTRY[alias] = {
+            'class': MODEL_REGISTRY[name]['class'],
+            'params': dict(MODEL_REGISTRY[name]['params'])
+        }
+        aliased_names.append(alias)
+    if aliased_names:
+        print("\nRenaming models for this run:")
+        for orig, ali in zip(model_names, aliased_names):
+            print(f"  {orig} -> {ali}")
+    return aliased_names
 
 
 def parse_models(models_str):
@@ -186,11 +280,24 @@ def main():
     
     # Parse model names
     model_names = parse_models(args.models)
-    
+
+    # Load optimal parameters if requested
+    opt_loaded = False
+    if args.optimal:
+        print("\n" + "="*80)
+        print("OPTIMAL HYPERPARAMETER MODE")
+        print("="*80)
+        opt_loaded = load_optimal_params(args.hpo_results, args.dataset, model_names)
+        # Append '_opti' to names only if optimal params were successfully loaded
+        if opt_loaded:
+            model_names = alias_models_with_suffix(model_names, suffix='_opti')
+        else:
+            print("\nNo optimal parameters applied; proceeding without renaming.")
+
     # Display configuration
     display_configuration(
-        args.dataset, 
-        model_names, 
+        args.dataset,
+        model_names,
         args.epochs,
         args.batch_size,
         args.learning_rate
